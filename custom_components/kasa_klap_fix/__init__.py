@@ -1,0 +1,55 @@
+"""Patch python-kasa so KLAP-failing Kasa devices work again.
+
+Add to configuration.yaml:
+
+    kasa_klap_fix:
+"""
+
+import logging
+
+import voluptuous as vol
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
+
+_LOGGER = logging.getLogger(__name__)
+
+DOMAIN = "kasa_klap_fix"
+CONF_FORCE_XOR_HOSTS = "force_xor_hosts"
+
+_OPTIONS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_FORCE_XOR_HOSTS, default=list): vol.All(
+            cv.ensure_list, [cv.string]
+        )
+    }
+)
+
+# `kasa_klap_fix:` with nothing after it parses as None, not {}.
+CONFIG_SCHEMA = vol.Schema(
+    {DOMAIN: vol.Any(_OPTIONS_SCHEMA, None)},
+    extra=vol.ALLOW_EXTRA,
+)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Apply the patch before the tplink integration connects."""
+    _LOGGER.warning("kasa_klap_fix: async_setup starting")
+    domain_config = config.get(DOMAIN) or {}
+    hosts = domain_config.get(CONF_FORCE_XOR_HOSTS) or []
+    try:
+        # Imported here, not at module level, so an import problem inside
+        # python-kasa is reported in the log instead of silently preventing
+        # the whole integration from loading.
+        from .patch import apply, resolved_imports
+
+        _LOGGER.warning("kasa_klap_fix: resolved %s", resolved_imports())
+        await hass.async_add_executor_job(apply, hosts)
+    except Exception:
+        _LOGGER.exception("kasa_klap_fix: FAILED to apply patch")
+        return False
+    _LOGGER.warning(
+        "kasa_klap_fix: patch applied successfully (XOR forced for: %s)",
+        ", ".join(hosts) if hosts else "no hosts",
+    )
+    return True
