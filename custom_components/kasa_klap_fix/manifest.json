@@ -1,7 +1,7 @@
 {
   "domain": "kasa_klap_fix",
   "name": "Kasa KLAP v2 auth fix",
-  "version": "1.0.0",
+  "version": "1.0.0-jf.1",
   "documentation": "https://github.com/python-kasa/python-kasa/issues/1740",
   "dependencies": [],
   "codeowners": [],

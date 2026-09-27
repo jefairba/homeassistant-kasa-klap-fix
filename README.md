@@ -1,5 +1,11 @@
 # homeassistant-kasa-klap-fix
 
+> **Fork of [tnummy/homeassistant-kasa-klap-fix](https://github.com/tnummy/homeassistant-kasa-klap-fix)**
+> with one addition: power strips (HS300 and other IOT devices with children)
+> reached over KLAP load as strips with their outlets, instead of as a single
+> plug that fails with `Unable to read data for <ip> None: 'relay_state'`.
+> See fallback 3 below.
+
 A Home Assistant custom component that works around KLAP authentication failures
 on Kasa devices — the `Device response did not match our challenge` /
 `Credentials must be supplied` errors — despite entering correct TP-Link
@@ -39,6 +45,12 @@ normal KLAP handshake fails:
 1. **KLAP v1 → v2.** Retries the handshake with v2 hashes before giving up.
 2. **Unauthenticated XOR.** If KLAP still fails and the device answers port
    9999, switches that connection to `XorTransport` — no credentials needed.
+3. **Device class from sysinfo** (this fork). Over KLAP, python-kasa chooses
+   the device class from the discovery family, and `IOT.SMARTPLUGSWITCH` always
+   maps to `IotPlug`. An HS300 whose port 9999 is closed then loads with no
+   outlet entities, the main switch `unavailable` and power stuck at 0. The
+   patch reads `get_sysinfo` first and picks the class from it, as python-kasa
+   already does on the XOR path.
 
 The XOR decision is made per live connection, not from a list of IPs, so it
 survives DHCP reassignment. Devices that authenticate normally are never

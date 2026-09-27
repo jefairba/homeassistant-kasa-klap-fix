@@ -28,6 +28,12 @@ Two independent fallbacks, applied to python-kasa at runtime.
 
 A device that works on v1 never takes an extra round trip, which keeps this safe
 on a mixed fleet.
+
+3. Device class from sysinfo
+   Over KLAP, python-kasa picks the device class from the discovery family, so
+   every "IOT.SMARTPLUGSWITCH" becomes IotPlug, including HS300 power strips.
+   Those then load with no outlets and fail on 'relay_state'. We read sysinfo
+   and choose the class the way the XOR path already does.
 """
 
 from __future__ import annotations
@@ -198,6 +204,37 @@ def _patch_factory() -> None:
             mod.get_protocol = get_protocol
 
 
+def _patch_device_class() -> None:
+    """Pick the IOT device class from sysinfo, not the discovery family.
+
+    For a non-XOR connection `device_factory._connect` builds the device from
+    `get_device_class_from_family`, which maps every "IOT.SMARTPLUGSWITCH"
+    device to `IotPlug`. An HS300 power strip reached over KLAP therefore comes
+    up as a single plug with no children, and the tplink integration fails
+    with `KeyError: 'relay_state'` (a strip has no top-level relay state).
+    The XOR branch asks the device what it is via get_sysinfo; do the same for
+    every IotProtocol connection.
+    """
+    original = device_factory._connect
+
+    async def _connect(config: DeviceConfig, protocol):  # type: ignore[no-untyped-def]
+        if not isinstance(protocol, IotProtocol) or isinstance(
+            protocol._transport, XorTransport
+        ):
+            return await original(config, protocol)
+        info = await protocol.query(device_factory.GET_SYSINFO_QUERY)
+        device_class = device_factory.get_device_class_from_sys_info(info)
+        _LOGGER.debug(
+            "Using %s for %s based on its sysinfo", device_class.__name__, config.host
+        )
+        device = device_class(config.host, protocol=protocol)
+        device.update_from_discover_info(info)
+        await device.update()
+        return device
+
+    device_factory._connect = _connect
+
+
 def resolved_imports() -> dict:
     """What we managed to import, for diagnostics."""
     return {
@@ -226,6 +263,7 @@ def apply(force_xor_hosts=()) -> None:
     _patch_handshake()
     _patch_iot_query()
     _patch_factory()
+    _patch_device_class()
     setattr(KlapTransport, _PATCH_FLAG, True)
     _LOGGER.info(
         "kasa_klap_fix applied (XOR forced for: %s)",
